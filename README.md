@@ -26,7 +26,7 @@ Encrypt a sample, confirm A's fingerprint and consent, let A read, then show B f
 
 ## Demo video
 
-[Watch the two-minute synthetic simulation](demo/altergether-demo.mp4). The video is a silent walkthrough of actual browser states, labelled **SIMULATION** throughout. See [demo/README.md](demo/README.md) for its scope and reproduction.
+[Watch the two-minute synthetic simulation](demo/DemoVideo.mp4). The video is a silent walkthrough of actual browser states, labelled **SIMULATION** throughout. See [demo/README.md](demo/README.md) for its scope and reproduction.
 
 ## Run without credentials
 
