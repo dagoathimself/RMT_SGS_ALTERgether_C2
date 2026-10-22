@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env.*
+.env*.local
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+
+# Sensitive TideCloak / Keycloak data
+data/*
+!data/.gitkeep

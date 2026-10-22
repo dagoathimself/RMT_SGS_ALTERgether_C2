@@ -2,7 +2,9 @@
 
 ## Project overview
 
-**ALTERGETHER lets people donate scam messages in English, Vietnamese or both to one named researcher at a time, and take that access back, without any administrator or server operator being able to read or hand out the text.**
+_One-sentence description of your project._
+
+Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked).
 
 ### 1. Vision & originality
 
@@ -58,69 +60,4 @@ Full design: [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
 
 ## Setup
 
-Requirements: Node.js 22+, npm, Docker, `curl`, `jq`, and a Tide account for each demo identity.
-
-```bash
-npm install
-cp .env.example .env
-```
-
-Set `KC_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, then:
-
-```bash
-npm run init
-```
-
-```bash
-npm run dev
-```
-
-`npm run init` starts local TideCloak in Docker, creates the realm and the `participant`, `researcher_a` and `researcher_b` identities, exports `data/tidecloak.json`, and writes one-time invitation links to `data/invites.local.txt` (gitignored). It asks for the licence email and terms acceptance.
-
-Open each invitation in its own **regular** browser profile (Chrome, Edge or Safari, not an embedded browser) and allow local network access if asked: the Tide sign-in page must reach TideCloak on `localhost:8080`. Then open [http://localhost:3000](http://localhost:3000).
-
-## Run the demo
-
-1. As `researcher_a` and `researcher_b`: open **Shared with me** and choose **Create my key**.
-2. As `participant`: pick a sample and choose **Encrypt and contribute**.
-3. As `researcher_a`: choose **Show my fingerprint** and read the first 16 characters to the participant.
-4. As `participant`: **Share** → choose `researcher_a`, type the fingerprint, tick consent, **Give access**.
-5. As `researcher_a`: **Read**. The text is decrypted in the browser.
-6. As `researcher_b`: **Security tests** → request the same contribution id (refused). Start the server with `ENABLE_ATTACK_SIMULATION=1` to also run **Run attack simulation** on the full stored ciphertext.
-7. As `participant`: **Withdraw**.
-8. As `researcher_a`: **Request again** (refused), then sign in again and retry (refused).
-
-The stolen-token checks run at [http://localhost:3000/checks](http://localhost:3000/checks) while signed in. Results go in [docs/VERIFICATION.md](docs/VERIFICATION.md).
-
-## Baseline comparison
-
-`npm run baseline` runs the same scenarios against a conventional portal (one server-held key, an admin-editable permission table). It fails 5 of 10 checks: a leaked database is readable, and one admin can grant access without the owner. See [evidence/baseline-results.md](evidence/baseline-results.md).
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | App on `http://localhost:3000` |
-| `npm run typecheck` | TypeScript checks |
-| `npm run test:api` | Server-side negative tests (forged, expired, `alg:none` tokens, origin, size and rate limits) |
-| `npm run baseline` | Conventional admin-controlled portal, for comparison |
-| `npm run reset` | Clear the local store and activity log |
-
-## Project structure
-
-```text
-src/app/participant/        contribute, share, withdraw
-src/app/researcher/         researcher key, reading, security tests
-src/app/checks/             stolen-token (DPoP) checks
-src/app/api/                protected API routes
-src/lib/crypto/envelope.ts  browser encryption, key copies, fingerprints
-src/lib/tide/selfKeys.ts    Tide self-encryption of keys
-src/lib/server/             request guard, access decisions, storage, activity log
-baseline/                   conventional portal used for comparison
-scripts/                    TideCloak bootstrap and API tests
-docs/                       security model, verification record
-evidence/                   recorded test results
-demo/                       demo video
-```
-
-Official references: [Challenge](https://tide.org/unlocked/) · [TideCloak](https://tide.org/tidecloak) · [Documentation](https://docs.tide.org/).
+<!-- How to install and run the prototype. -->
