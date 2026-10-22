@@ -1,10 +1,13 @@
 // Server-side negative tests against the RUNNING app (npm run dev). No real tokens are used or needed:
 // every request here must be refused. Writes evidence/api-negative-tests.md.
 import { SignJWT, generateKeyPair, exportJWK, calculateJwkThumbprint } from "jose";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 
 const APP = process.env.APP_ORIGIN || "http://localhost:3000";
-const cfg = JSON.parse(readFileSync("data/tidecloak.json", "utf8"));
+const configured = !!process.env.CLIENT_ADAPTER || existsSync("data/tidecloak.json");
+const cfg = configured ? JSON.parse(process.env.CLIENT_ADAPTER || readFileSync("data/tidecloak.json", "utf8")) : {
+  "auth-server-url": "http://localhost:8080", realm: "not-configured", resource: "consent-vault-client",
+};
 const iss = `${cfg["auth-server-url"].replace(/\/+$/, "")}/realms/${cfg.realm}`;
 const rows = [];
 const check = (name, expected, observed, extra = "") => rows.push({ name, expected, observed: String(observed), pass: String(expected).split("|").includes(String(observed)), extra });
@@ -45,7 +48,7 @@ check("alg:none token → 401", 401, r.status);
 // 5. expired-looking token signed with attacker key
 const expired = await new SignJWT(claims).setProtectedHeader({ alg: "EdDSA" }).setIssuer(iss).setIssuedAt(now - 4000).setExpirationTime(now - 3600).sign(privateKey);
 r = await req("/api/me", { headers: { Authorization: `Bearer ${expired}` } });
-check("Expired token → 401", 401, r.status);
+check("Attacker-signed expired-looking token → 401 (not proof of expiry validation)", 401, r.status);
 // 6. CSRF: state-changing request from a foreign origin / no origin
 r = await req("/api/contributions", { method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/json" }, body: "{}" });
 check("POST from foreign Origin → 403", 403, r.status);
@@ -73,8 +76,9 @@ check("400-request burst → some 429 (shared limit 300 burst, 10/s)", "true", S
 
 const pass = rows.filter((x) => x.pass).length;
 const md = ["# API negative tests (server-side, no real tokens)", "", `Run at ${new Date().toISOString()} against ${APP}. ${pass}/${rows.length} as expected.`, "",
+  configured ? "Adapter present. These forged-token checks still do not establish live Tide session behaviour." : "No Tide adapter is configured: this HTTP run verifies fail-closed responses only. npm test separately verifies real signature, claim, DPoP and workflow checks against an ephemeral local test realm.", "",
   "| Check | Expected | Observed | Result | Note |", "|---|---|---|---|---|",
-  ...rows.map((x) => `| ${x.name} | ${x.expected} | ${x.observed} | ${x.pass ? "PASS" : "FAIL"} | ${x.extra.replace(/\|/g, "/")} |`), ""].join("\n");
+  ...rows.map((x) => `| ${x.name} | ${String(x.expected).replace(/\|/g, " or ")} | ${x.observed} | ${x.pass ? "PASS" : "FAIL"} | ${x.extra.replace(/\|/g, "/")} |`), ""].join("\n");
 mkdirSync("evidence", { recursive: true });
 writeFileSync("evidence/api-negative-tests.md", md);
 console.log(md);

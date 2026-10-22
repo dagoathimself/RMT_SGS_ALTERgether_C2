@@ -29,7 +29,7 @@ export function TideStatus() {
         {row(s?.realm ? `TideCloak realm "${s.realm}"` : "TideCloak realm", failed ? { ok: false, ms: 0, detail: "unreachable" } : s?.tidecloak)}
         {row("Tide network", failed ? undefined : s?.tideNetwork)}
       </ul>
-      {down && <p className="small">Sign-in and encryption are paused while this is down. Nothing protected is shown.</p>}
+      {down && <p className="small">A dependency check failed. Live sign-in or encryption may be unavailable; reachability alone does not verify either operation.</p>}
     </div>
   );
 }

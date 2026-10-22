@@ -90,7 +90,9 @@ export async function decryptBody(
     unb64(bodyCt),
   );
   const payload = JSON.parse(td.decode(pt)) as ContributionPayload;
-  if (payload.synthetic !== true) throw new Error("Payload is not marked synthetic");
+  if (payload.synthetic !== true || typeof payload.text !== "string" ||
+      !["en", "vi", "mixed"].includes(payload.language) ||
+      payload.sha256 !== await sha256Hex(payload.text)) throw new Error("Payload integrity check failed");
   return payload;
 }
 

@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test:api": "node scripts/test-api.mjs",
     "baseline": "node baseline/baseline.mjs",
-    "reset": "node scripts/reset-store.mjs"
+    "reset": "node scripts/reset-store.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "test:http": "node scripts/check-http.mjs"
   },
   "dependencies": {
     "@tidecloak/nextjs": "0.14.40",

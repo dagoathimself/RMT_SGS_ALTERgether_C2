@@ -2,62 +2,99 @@
 
 ## Project overview
 
-_One-sentence description of your project._
-
-Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked).
+**ALTERGETHER explores donating a language sample to one named researcher, with explicit consent and withdrawal. This prototype uses synthetic examples only.**
 
 ### 1. Vision & originality
 
-Real scam messages are the best material for studying scams, and Vietnamese and mixed Vietnamese–English examples are scarce. ALTERGETHER makes each donation a consent decision: one message, one named researcher, one stated purpose, revocable.
+Study how people describe scams in English, Vietnamese and mixed Vietnamese–English while preserving original wording and diacritics. We adapt the Research Consent Vault pattern to a language-research workflow; we do not claim to have invented consent vaults or established demand.
 
 ### 2. Trust constraint insight
 
-A forwarded scam often contains the donor's bank, phone number or a friend's name. In a typical portal, whoever runs the server holds the decryption key and edits permissions, so donors must trust every administrator. That trust is the bottleneck.
+An administrator-controlled portal can change permissions or hold everyone's decryption key. A donor must then trust the operator with every report. Our design separates portal permissions from the owner's ability to create a recipient-specific key copy.
 
 ### 3. Value & impact
 
-Donors keep control of each message. Researchers get the original wording, not a sanitised translation. The operator never holds sensitive text. The pattern fits other sensitive donations: health notes, abuse reports.
+Participants choose the sample, researcher and purpose. Researchers receive the original text rather than a translation. Six synthetic examples demonstrate the interaction; real-user usefulness and language-data needs remain hypotheses to validate.
 
 ### 4. Why TideCloak matters
 
-Each message is encrypted in the donor's browser. Its key is sealed with Tide self-encryption to the donor's own Tide identity, which the decentralised Tide network opens only for that person: no master key exists. To share, the donor's browser makes one key copy for a researcher whose private key is likewise sealed to their own Tide identity. Admin roles decide who may use the portal but cannot create a key copy. Without Tide, someone would hold those keys.
+The live path uses Tide sign-in, verified tokens and DPoP. Browser encryption seals message keys and researcher private keys to their respective Tide identities. Ordinary login alone does not provide that key protection. `/demo` clearly simulates Tide identity sealing and portal decisions while exercising real WebCrypto encryption; live Tide enrolment and end-to-end decryption remain unverified.
 
 ### 5. Prototype & storytelling
 
-The participant confirms Researcher A's key fingerprint and shares one Vietnamese sample. A reads it. Researcher B is refused; even handed the whole stored ciphertext, B opens nothing. The participant withdraws, and A's next request is refused. A typical admin-controlled portal fails 5 of the same 10 checks.
+Encrypt a sample, confirm A's fingerprint and consent, let A read, then show B failing with the ciphertext. Withdraw, rotate the message key and test the old key against the current record. Withdrawal cannot erase earlier copies or prevent a malicious operator restoring an old record. Multi-admin governance is not demonstrated.
 
 ## Demo video
 
-[demo/altergether-demo.mp4](demo/altergether-demo.mp4) (two minutes, under 100 MB).
+[Watch the two-minute synthetic simulation](demo/altergether-demo.mp4). The video is a silent walkthrough of actual browser states, labelled **SIMULATION** throughout. See [demo/README.md](demo/README.md) for its scope and reproduction.
 
-## How it works
+## Run without credentials
 
-| Item | Created in | Protected by | What the server stores |
-|---|---|---|---|
-| Message text | Participant's browser | AES-256-GCM, a fresh key per message | Ciphertext |
-| Message key | Participant's browser | Tide self-encryption, bound to the participant's Tide identity | Sealed blob |
-| Researcher private key | Researcher's browser | Tide self-encryption, bound to the researcher's Tide identity | Sealed blob + public key |
-| Key copy for one researcher | Participant's browser | ECDH + HKDF + AES-GCM, bound to the message, researcher, grant, purpose and key version | Wrapped key |
+Requirements: Node.js 24 and npm.
 
-**Read path:** the server checks for an active grant and returns ciphertext plus that researcher's key copy. The researcher's browser asks Tide to open their own private key, unwraps the message key and decrypts in memory. Editing any bound field in the database makes the unwrap fail.
+```bash
+npm ci
+npm run dev
+```
 
-**Key authenticity:** public keys are served by the app, so before sharing, the participant must type the first 16 characters of the researcher's key fingerprint, read to them by the researcher. The researcher's fingerprint is computed in their own browser from the private key only their Tide identity can open, so a key swapped on the server does not match and nothing is shared.
+Open [http://localhost:3000/demo](http://localhost:3000/demo). Identity sealing is simulated with independent, in-memory AES keys in one tab. This demonstrates the workflow, **not real user isolation, Tide availability, or administrator quorum**. It never authenticates to the protected live API. Reset or reload discards the simulated state. The live portal displays setup guidance until configured; it does not fall back to simulated authentication.
 
-**Withdrawal:** the server stops serving the message to that researcher, the participant's browser re-encrypts it under a new key, and the server deletes the withdrawn key copy. Withdrawal cannot erase anything the researcher already read.
+## Configure live TideCloak
 
-**Every API request** is checked server-side: token signature, issuer, audience, `azp`, expiry, and the DPoP proof (a stolen token replayed without its proof key is refused).
+Additional requirements: Docker, `curl`, `jq`, network access and separate Tide accounts for the demo identities.
 
-Full design: [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+```bash
+cp .env.example .env
+# Set KC_BOOTSTRAP_ADMIN_PASSWORD in .env to your own strong local password.
+npm run init
+npm run dev
+```
 
-## Known limits
+`npm run init` asks the deployment owner for a licence email and acceptance of Tide's terms before creating the local realm. It generates `data/tidecloak.json` and invitation links in `data/invites.local.txt`; both stay untracked. Open the three invitations in separate regular browser profiles and complete Tide enrolment. Allow local-network access if your browser asks. The Tide network must reach local TideCloak at `http://localhost:8080` through your browser.
 
-- **One governance admin.** The realm runs in TideCloak's bootstrap mode, so one admin approves realm changes alone. That admin cannot read messages or create access, but can change roles, for example to block a user.
-- **Withdrawal is enforced by the app server.** A malicious operator could keep serving an old key copy to a researcher who already had access. Stored data alone never lets anyone outside the grant read the text.
-- **Trusted app code.** As with any web end-to-end encryption, whoever serves the JavaScript could ship code that leaks plaintext from a user's browser.
-- **Purpose is recorded, not enforced.** The study purpose is bound to each grant, but cryptography cannot stop an authorised researcher from misusing what they read.
-- **Metadata is visible to the server:** who contributed, who was granted, and when.
-- **Local prototype:** loopback HTTP, JSON-file storage, synthetic data only, no researcher key rotation.
+The application reads its adapter at runtime, so a fresh build does not need your credentials, database, or generated adapter. Advanced deployments may supply the public adapter as the server-only `CLIENT_ADAPTER` JSON environment variable. Only allowlisted public adapter fields reach the browser. Production use requires HTTPS, a shared replay/rate-limit store, durable transactional storage and additional review.
 
-## Setup
+## Live workflow
 
-<!-- How to install and run the prototype. -->
+1. As `researcher_a` and `researcher_b`, open **Shared with you** and **Create my key**.
+2. As `participant`, choose a synthetic example and **Encrypt and contribute**.
+3. Researcher A opens **Show my fingerprint** and reads its first 16 hexadecimal characters to the participant through a trusted channel.
+4. The participant opens **Share**, selects A, enters that fingerprint, reads the purpose, ticks consent, then chooses **Give access**.
+5. A opens **Read / request again**. B can request the same contribution ID and should be refused.
+6. The participant confirms **Withdraw**. If another recipient remains active, reconfirm that recipient's fingerprint before re-wrapping. An interruption leaves withdrawal pending and new reads by the withdrawn recipient blocked; **Resume withdrawal** retries it.
+7. A requests the sample again. Current portal access should be denied; already obtained copies cannot be erased.
+8. Signed-in users can run token-theft checks at `/checks`.
+
+These steps are implemented but have **not been run here with enrolled Tide identities**. Record a live result only after observing it.
+
+## Security and limits
+
+- Browser-only AES-256-GCM message encryption; fresh message key per contribution and after withdrawal.
+- Tide self-encryption in the live path protects the owner's message key and the researcher's ECDH private key. No application master decryption key exists.
+- Owner-created ECDH/HKDF/AES-GCM key copies bind contribution, recipient, grant, purpose, permission version and key version. Fingerprints must be confirmed out of band before sharing or preserving a recipient during re-keying.
+- Every protected route checks token signature, issuer, audience, `azp`, expiry, DPoP, role and record ownership/access. Actors come from verified `sub`, never a request body's user ID. Responses are not cached.
+- Withdrawal first blocks new portal reads, atomically re-keys the stored sample and removes the target key copy, then verifies the persisted denial before showing **Withdrawn**.
+- **Single-admin bootstrap remains.** No working two-of-three governance is claimed. Role changes do not themselves create a message key copy, but availability still depends on the operator.
+- **A malicious operator serving modified JavaScript can steal browser plaintext.** Retained old ciphertext and old wraps can also be restored. This prototype does not resolve those threats.
+- An authorised researcher can retain or misuse what they read. Purpose recording does not technically enforce subsequent behaviour. Metadata remains visible to the server.
+- JSON-file storage, in-memory replay detection and rate limiting assume one local process. Restarts lose replay history. Synthetic fixtures are public source material; only operational ciphertext is confidential by design.
+
+See [security model](docs/SECURITY_MODEL.md), [verification](docs/VERIFICATION.md) and [submission checklist](docs/SUBMISSION_CHECKLIST.md).
+
+## Verification commands
+
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run test:http
+npm run baseline
+```
+
+`npm test` verifies encryption, DPoP and the actual route handlers with a disposable locally signed test realm. It does **not** call Tide or bypass the production verifier. `npm run test:http` starts a production server and runs HTTP smoke/negative checks; run `npm run build` first. `npm run test:api` checks an already running server. Missing-adapter HTTP tests establish fail-closed responses, not working live authentication.
+
+`npm run reset` clears the local operational store and researcher keys; re-create keys and contributions afterward. The isolated `baseline/` script demonstrates a constructed operator-controlled design; its failures are not a measured comparison with every conventional portal.
+
+## References
+
+[Official challenge, including Plan C](https://tide.org/unlocked/#plan-c) · [Tide E2EE](https://docs.tide.org/Admin/e2ee) · [RFC 9449 DPoP](https://www.rfc-editor.org/rfc/rfc9449.html) · [Source record](docs/SOURCES.md)

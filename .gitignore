@@ -12,3 +12,6 @@ npm-debug.log*
 # Sensitive TideCloak / Keycloak data
 data/*
 !data/.gitkeep
+.tide-pack/
+_archive/
+*.zip

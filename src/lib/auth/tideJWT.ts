@@ -37,6 +37,9 @@ export async function verifyTideJWT(token: string): Promise<JWTPayload> {
   if (payload.azp !== config.resource) {
     throw new Error("Token azp does not match client");
   }
+  if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 200) {
+    throw new Error("Token has no valid subject");
+  }
 
   // exp/nbf are enforced by jwtVerify above; also refuse tokens issued in the future.
   const now = Math.floor(Date.now() / 1000);
@@ -49,15 +52,19 @@ export async function verifyTideJWT(token: string): Promise<JWTPayload> {
 
 /** Realm role, or a role on THIS app's client. Roles on other clients never count here. */
 export function hasRole(payload: JWTPayload, role: string): boolean {
-  const realmRoles: string[] = (payload.realm_access as { roles?: string[] })?.roles ?? [];
-  if (realmRoles.includes(role)) return true;
-  const own = (payload.resource_access as Record<string, { roles?: string[] }> | undefined)?.[getConfig().config.resource];
-  return own?.roles?.includes(role) ?? false;
+  return rolesFor(payload).includes(role);
+}
+
+export function rolesFor(payload: JWTPayload): string[] {
+  const realm = (payload.realm_access as { roles?: unknown })?.roles;
+  const own = (payload.resource_access as Record<string, { roles?: unknown }> | undefined)?.[getConfig().config.resource]?.roles;
+  return [...new Set([...(Array.isArray(realm) ? realm : []), ...(Array.isArray(own) ? own : [])]
+    .filter((r): r is string => typeof r === "string"))];
 }
 
 export function extractToken(authHeader: string | null): string {
   if (!authHeader) throw new Error("Missing Authorization header");
-  if (authHeader.startsWith("Bearer ")) return authHeader.substring(7);
-  if (authHeader.startsWith("DPoP ")) return authHeader.substring(5);
+  const match = /^(?:Bearer|DPoP) ([^\s]+)$/i.exec(authHeader);
+  if (match) return match[1];
   throw new Error("Invalid Authorization header format");
 }

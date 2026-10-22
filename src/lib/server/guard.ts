@@ -11,7 +11,7 @@
  */
 import { NextRequest } from "next/server";
 import type { JWTPayload } from "jose";
-import { verifyTideJWT, hasRole, extractToken } from "@/lib/auth/tideJWT";
+import { verifyTideJWT, hasRole, extractToken, rolesFor } from "@/lib/auth/tideJWT";
 import { verifyDpop } from "@/lib/auth/verifyDpop";
 import { evidence } from "./store";
 
@@ -95,9 +95,30 @@ async function readBody(req: NextRequest): Promise<{ ok: true; body: unknown } |
   if (req.method === "GET" || req.method === "HEAD") return { ok: true, body: undefined };
   const len = Number(req.headers.get("content-length") || "0");
   if (len > MAX_BODY_BYTES) return { ok: false, res: deny(413, "too_large") };
-  const buf = await req.arrayBuffer();
-  if (buf.byteLength > MAX_BODY_BYTES) return { ok: false, res: deny(413, "too_large") };
-  if (buf.byteLength === 0) return { ok: true, body: {} };
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = req.body?.getReader();
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_BODY_BYTES) {
+          await reader.cancel();
+          return { ok: false, res: deny(413, "too_large") };
+        }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+  }
+  if (!size) return { ok: true, body: {} };
+  if (!req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    return { ok: false, res: deny(400, "bad_request") };
+  }
+  const buf = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) { buf.set(chunk, at); at += chunk.byteLength; }
   try {
     return { ok: true, body: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buf)) };
   } catch {
@@ -139,12 +160,12 @@ export function guard(opts: GuardOptions, handler: (ctx: Ctx) => Promise<Respons
       }
       try {
         await verifyDpop(req, token, jwt as { cnf?: { jkt?: string } }, { trustForwardedHeaders: false });
-      } catch (e) {
-        evidence({ actorSub: String(jwt.sub ?? ""), actorName: name(jwt), action: opts.action, result: "denied", detail: `dpop_invalid: ${shortReason(e)}` });
+      } catch {
+        countAnon("dpop_invalid");
         return deny(401, "unauthenticated");
       }
 
-      const actor: Actor = { sub: String(jwt.sub), name: name(jwt), roles: ((jwt.realm_access as { roles?: string[] })?.roles ?? []).slice() };
+      const actor: Actor = { sub: String(jwt.sub), name: name(jwt), roles: rolesFor(jwt) };
       if (opts.roles && !opts.roles.some((r) => hasRole(jwt, r))) {
         evidence({ actorSub: actor.sub, actorName: actor.name, action: opts.action, result: "denied", detail: `missing role (${opts.roles.join("|")})` });
         return deny(403, "forbidden");
@@ -153,9 +174,9 @@ export function guard(opts: GuardOptions, handler: (ctx: Ctx) => Promise<Respons
         return deny(429, "rate_limited");
       }
       return await handler({ req, jwt, actor, body: bodyRes.body });
-    } catch (e) {
-      // Fail closed. Log a reason without request data.
-      console.error(`[guard] ${opts.action} failed: ${shortReason(e)}`);
+    } catch {
+      // Do not echo exception messages: SDK errors can contain request material.
+      console.error(`[guard] ${opts.action} failed`);
       return deny(500, "server_error");
     }
   };

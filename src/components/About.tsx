@@ -12,7 +12,7 @@ export function About() {
             <li><strong>Encrypted in your browser</strong>Each sample is locked before upload. The server only ever stores ciphertext.</li>
             <li><strong>Sealed to you</strong>The key is tied to your Tide identity. No administrator or server operator holds a key that opens it.</li>
             <li><strong>Shared with one person</strong>Your browser makes one key copy that only the researcher you name can open.</li>
-            <li><strong>Taken back</strong>Withdraw and the server stops serving it, re-locks it with a new key and deletes their copy. What they already read stays with them.</li>
+            <li><strong>Taken back</strong>The server blocks new reads while your browser re-locks the sample with a fresh key. Their current key copy is deleted. What they already read stays with them.</li>
           </ol>
         </section>
       </main>

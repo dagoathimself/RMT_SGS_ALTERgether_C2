@@ -3,6 +3,9 @@
    green = act / active access / links, yellow = pending, orange = labels and notes,
    red = withdraw, refusals and errors only. Darker "-ink" shades are used wherever text needs contrast. */
 :root {
+  --font-google-sans: "Arial";
+  --font-mono: "SFMono-Regular", Consolas;
+  --font-hand: "Segoe Print";
   --red: #e53246;      --red-ink: #b81d33;    --red-soft: #fde6e8;
   --orange: #dd6a37;   --orange-ink: #a8481c; --orange-soft: #fbe7dc;
   --yellow: #f7d147;   --yellow-ink: #6b4f00; --yellow-soft: #fdf3cc;
@@ -77,6 +80,7 @@ header.top nav button.secondary { padding: 7px 14px; font-size: .85rem; }
 h1 { font: 600 2.2rem/1.15 var(--heading); margin: 0 0 12px; }
 h2, .eyebrow { font: 400 .8rem var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--orange-ink); margin: 0 0 18px; }
 section.panel > h2::before { counter-increment: sec; content: counter(sec, decimal-leading-zero) "  "; color: var(--green-ink); white-space: pre; }
+.demo-workspace section.panel > h2::before { content: none; counter-increment: none; }
 h3 { font: 600 1.05rem/1.35 var(--sans); margin: 0 0 4px; color: var(--ink); }
 .title { font: 600 2rem/1.2 var(--heading); letter-spacing: -0.02em; margin: 0 0 18px; }
 p { margin: 0 0 12px; }

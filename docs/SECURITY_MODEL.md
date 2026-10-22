@@ -1,134 +1,60 @@
 # Security model — ALTERGETHER
 
-Status: design, verified piece by piece in `docs/VERIFICATION.md`. Nothing here is a claim of
-production security.
+This is a local, synthetic-data prototype. Implemented mechanisms and observed tests are separate from live Tide claims; see VERIFICATION.md.
 
-## 1. Identities
+## Live trust boundaries
 
-| Identity | Controlled by | Tide account | Realm roles | Purpose |
-|---|---|---|---|---|
-| `participant` | team member (synthetic persona) | own, via invite link | `participant` + defaults | owns the 6 synthetic contributions |
-| `researcher_a` | team member (synthetic persona) | own | `researcher` + defaults | named recipient in the demo |
-| `researcher_b` | team member (synthetic persona) | own | `researcher` + defaults | unapproved researcher (attacker) |
-| master `admin` (bootstrap) | operator, password in gitignored `.env` | none | master realm admin | bootstrap; **because governance-admin enrolment was skipped (team decision, 2026-10-22), this operator can still commit governed realm changes alone** (firstAdmin mode) |
-
-Governance admins (3 people, threshold 2-of-3) were planned but **not enrolled**. QEA is enabled on
-the realm, yet with no `tide-realm-admin` holder the bootstrap operator approves changes alone. What
-that operator can do: change roles, disable or delete users, i.e. block access. What it still cannot
-do: produce a contribution key or plaintext, because neither depends on any role (§4).
-
-Defaults for every user: `_tide_enabled`, `appUser`, `_tide_keys.selfencrypt`, `_tide_keys.selfdecrypt`.
-These self-encryption roles are harmless to share: Tide self-encryption is identity-bound, so the
-role only lets a user decrypt what **they themselves** encrypted.
-
-## 2. Trust boundaries
-
-```
- Owner's browser ──(DPoP-bound token, ciphertext only)──▶ App server (Next.js API) ──▶ data/store (JSON files)
-       │  Tide SDK                                          │ verifies JWT + DPoP, checks
-       ▼                                                    │ actor/role/grant per request
- Tide ORK network (threshold, 14-of-20) ◀── researcher's browser (Tide SDK)
-       ▲
- TideCloak (local Docker, loopback only) — realm with QEA (quorum governance) on
-```
-
-| Component | Trusted for | NOT trusted for |
+| Component | Holds / does | Trust assumption and limit |
 |---|---|---|
-| Participant / researcher browser running the app code | its own user's plaintext | anything about other users |
-| App server + `data/store` + logs | availability, metadata, workflow state, serving the right ciphertext | confidentiality: it never holds plaintext or a usable key |
-| TideCloak admins (any one) | proposing governed changes | applying them alone; reading contribution text |
-| Admin quorum (2 of 3) | role/policy changes | creating contribution access (no role or policy yields an owner's key) |
-| Tide ORK network | threshold self-encryption, token signing | — (assumption: fewer than 14 colluding nodes, per Tide threat model) |
-| Master realm admin | bootstrap | — not yet tested against the app realm |
+| Owner browser | Encrypts text; opens its Tide-sealed message key; confirms recipient fingerprint; makes key copies | The device and served application code are trusted. A malicious JavaScript supplier can steal plaintext. |
+| Researcher browser | Opens its own Tide-sealed private key and unwraps its permitted message key | An authorised reader can copy or misuse plaintext. |
+| Next.js server | Verifies token/DPoP, actor/role and record access; stores ciphertext and metadata | Trusted for availability and portal withdrawal state. Cannot derive an owner's key from the stored encrypted record under the cryptographic and Tide assumptions. |
+| TideCloak + Tide network | Live identity authentication, token signing and identity-bound self-encryption | Depends on correct realm setup, enrolled identities, SDK and network. Full live flow is not verified in this repair. |
+| Bootstrap administrator | Changes realm roles and users | Single-operator bootstrap is the current setup. No multi-admin quorum result exists. Changing a role does not create an owner's key copy. |
 
-## 3. Where encryption and decryption happen
+Three synthetic personas are configured by bootstrap scripts: participant, researcher_a and researcher_b. Their Tide enrolment requires a person. No credentials, invitations or operational databases belong in Git.
 
-All in the browser. The server sees only the right-hand column.
+## Data and keys
 
-| Secret | Created | Protected by | Stored on server as |
-|---|---|---|---|
-| contribution text | owner's browser (from fixture or typed) | AES-256-GCM under contribution key `K_v` | `bodyCt` (+ iv) |
-| contribution key `K_v` (32 random bytes, version v) | owner's browser | **Tide self-encryption by the owner** (tag `keys`) | `ownerKeyCt` |
-| researcher private key (ECDH P-256) | researcher's browser | **Tide self-encryption by the researcher** | `encPrivateKey` (+ public JWK, fingerprint) |
-| per-grant key wrap | owner's browser | ECDH-ES(ephemeral → researcher public key) + HKDF-SHA-256 + AES-256-GCM; AAD binds contribution id, recipient `sub`, grant id, permission version, purpose hash and key version | `wrap` on the grant |
+Each contribution uses a fresh random 256-bit AES-GCM key and 96-bit IV. Browser encryption authenticates the contribution ID and key version. The encrypted payload contains the original text, language, synthetic marker and text digest; the digest is checked after authenticated decryption.
 
-**Read path (researcher):** server checks the grant → returns `bodyCt` + that researcher's `wrap` →
-browser calls Tide `doDecrypt` on the researcher's *own* `encPrivateKey` (needs the researcher's live
-Tide identity) → unwraps `K_v` (fails if any bound field was altered) → decrypts text in memory.
-Nothing is written to browser storage.
+The live browser calls Tide `doEncrypt` / `doDecrypt` with the `keys` tag to seal/open the owner's message key and each researcher's ECDH private key. `_tide_keys.selfencrypt` and `_tide_keys.selfdecrypt` roles and a working Tide session are required. There is no application master key or privileged decrypt endpoint. These SDK calls remain unverified here against enrolled live accounts.
 
-## 4. What binds owner consent → contribution → recipient → permission version → decryption
+Sharing uses ephemeral ECDH P-256, HKDF-SHA-256 and AES-256-GCM. Each key copy binds contribution ID, recipient `sub`, grant ID, permission version, purpose hash and message-key version. A changed field or another researcher's private key causes unwrap failure. Public keys come from the server, so the owner must confirm 16 hexadecimal fingerprint characters through a trusted out-of-band channel. A researcher derives their displayed fingerprint from their own sealed private key, not a server-supplied fingerprint alone.
 
-The mechanism is **cryptographic, not a database row**:
+The owner browser checks the returned grant against the selected researcher, contribution and displayed study purpose before wrapping. The researcher checks the same purpose and its own identity before unwrapping. These checks assume honest served JavaScript; they do not solve malicious-client-code delivery.
 
-1. Only the owner can obtain `K_v`: it exists in the store only as `ownerKeyCt`, which Tide decrypts
-   only for the identity that encrypted it.
-2. A recipient can obtain `K_v` only from a wrap made to *their* public key. Only a party who
-   already knows `K_v` can make one. Server-side, only the owner (`sub` == `ownerSub`) may create grants.
-3. The wrap's AES-GCM AAD contains `contributionId | recipientSub | grantId | permissionVersion |
-   sha256(studyPurpose) | keyVersion`. Changing any of these in the database makes unwrap fail.
-4. The recipient's private key opens only through the recipient's own Tide identity.
+## Server enforcement
 
-So an admin (or quorum) assigning roles, editing a grant row, or handing ciphertext to another user
-cannot produce plaintext.
+Every protected route uses the same guard: bounded streamed JSON body, fixed local rate limit, exact Origin on writes, verified Ed25519 JWT (issuer, audience, azp, required claims and expiry), ES256 DPoP, role and record-level authorisation. Identity comes only from verified `sub`. Roles on another client never count. Admin roles have no contribution-access exception.
 
-**Withdrawal** is enforced by the app server: from the first step it stops serving the ciphertext and wrap
-to that recipient. The owner's browser then re-keys the contribution (`K_{v+1}`, new `bodyCt`, new
-`ownerKeyCt`, re-wraps for any other still-active grants) and the server deletes the withdrawn
-recipient's wrap in the same atomic write. The grant shows **Withdrawal pending** until the server
-confirms that (a) the stored key version advanced and (b) no wrap for that recipient exists at the
-current version, and a fresh access probe is denied. Then it shows **Withdrawn**. The probe runs on the
-server against its own store, so it confirms the server's state, not the honesty of the operator: a
-malicious operator could restore the old wrap. What re-keying does guarantee is that the *current*
-stored record, if leaked, no longer opens for the withdrawn recipient.
-Old ciphertext and an old wrap that a researcher deliberately copied during the authorised period
-still open the *old* plaintext they were already authorised to see. This is the "copies already
-obtained" limit, not fresh access.
+DPoP proofs require a public P-256 JWK, matching key thumbprint, token hash, exact method and target URI, acceptable timestamp and unused identifier. Forwarded-host headers are ignored by default. Replay entries remain until the last instant the proof could still be accepted, including future timestamp allowance. Oversized identifiers are rejected. Replay/rate state is in memory and not restart-safe or shared across instances.
 
-## 5. Who can change effective authority
+Requests cannot add plaintext fields, actor IDs or arbitrary metadata to contributions. Only the six public synthetic fixtures can be selected. The server cannot prove that arbitrary supplied bytes really are Tide ciphertext; cryptographic validity is established when a browser opens them. Rejecting a field is not a cryptographic proof of its contents.
 
-| Change | Who can make it | Effect on contribution access |
-|---|---|---|
-| grant/withdraw a contribution | the owner only (their browser + their Tide identity) | creates / removes access |
-| assign/remove realm roles (`researcher`, `participant`, `_tide_keys.*`, `tide-realm-admin`) | admin quorum (2 of 3) via QEA change requests | API access to the portal; **cannot** create access to a contribution. Removing `_tide_keys.selfdecrypt` or `researcher` can *block* a researcher (availability) |
-| edit `data/store` | app operator | can deny service or show wrong metadata; cannot produce plaintext. Can substitute a researcher **public key** before a *new* grant (see §7) |
-| master realm admin | operator with bootstrap password | QEA does not govern the master realm. Whether it can apply app-realm changes without quorum is not yet tested |
+## Sharing and withdrawal state
 
-## 6. Threats in scope vs excluded
+A grant begins pending and has no key copy. Only the owner can activate it with a current-version wrap. Pending grants can be cancelled. The server prevents new grant activation while a withdrawal is pending.
 
-In scope: unapproved researcher; one compromised admin; direct API requests; changed identifiers;
-stale sessions; a governed change that legitimately reaches quorum; dependency failure.
-Excluded: compromised user device; malicious app code served to a legitimate user;
-sufficient-quorum collusion; every service-root compromise.
+Withdrawal proceeds as follows:
 
-## 7. Known gaps and residual risks (honest list)
+1. The owner requests withdrawal. The target grant becomes withdrawal_pending and is immediately ineligible for new portal reads. Pending shares for that contribution are cancelled.
+2. The owner browser opens the old record, generates a fresh message key, re-encrypts the sample and seals the new key to its own Tide identity. Every other active recipient's fingerprint must be reconfirmed before their new key copy is made.
+3. One serialised store transaction checks the expected old version and exact remaining-recipient set, advances the key version, stores all fresh ciphertext/wraps and deletes the withdrawn recipient's wrap. Invalid or incomplete changes leave the old saved record unchanged.
+4. A separate owner-authorised request re-reads persisted state and checks the advanced version, missing target wrap and denied access decision. Only then does the state become withdrawn.
 
-- **Public-key directory trust (mitigated by an enforced out-of-band check).** The owner's browser
-  fetches the recipient's public key from the app server, so a compromised operator could try to
-  substitute one. Before any wrap is made (sharing, and re-wrapping for remaining recipients during a
-  withdrawal), the owner must type the first 16 hex characters (64 bits) of the recipient's
-  fingerprint, read to them by the recipient. The owner's browser compares that with a fingerprint it
-  computes itself from the key it is about to use. The recipient's fingerprint is derived in their own
-  browser from their Tide-sealed private key, so a server-substituted key does not match. The residual
-  risk is the human channel (an owner who skips asking, or a spoofed voice/chat). Tide's owner-mode
-  attestation would remove it, but needs a custom contract that only the Tide team can deploy.
-- **Malicious app code** (out of scope) could exfiltrate keys from a legitimate browser.
-- Re-sharing by an authorised researcher (or retaining plaintext) cannot be prevented.
-- Researcher key registration is first-come for that account; there's no key rotation UI.
-- Recording a study purpose does not technically prevent misuse after authorised viewing.
-- Local development runs over loopback HTTP (see §8).
+An interrupted action remains pending and can be resumed. Re-keying protects the current record against the old key. It cannot erase plaintext, ciphertext or key copies retained during an authorised period. A malicious operator can restore an old record. The fresh denial check verifies this server's saved state, not the operator's honesty.
 
-## 8. Transport and exposure
+## Activity and storage
 
-Development exception: TideCloak (`127.0.0.1:8080`) and the app (`localhost:3000`) are bound to
-loopback and use HTTP. Any deployed component must use HTTPS. Redirect URIs are restricted to the
-exact app paths (`/`, `/auth/redirect`, `/silent-check-sso.html`), and web origins to
-`http://localhost:3000` (no wildcards). Tide's own network traffic is HTTPS.
+Operational storage contains metadata, ciphertext, Tide-sealed key blobs and recipient wraps. Contribution plaintext, raw keys, tokens and invitation links are not logged. Activity views are scoped to the actor, owner or relevant grant. The file is hash-chained for accidental-edit detection, not immutable against its operator. No free-text client event endpoint exists.
 
-## 9. Design decisions against Tide-native options
+Writes use atomic rename and an in-process serialisation chain. This is suitable for one local prototype process only, not multi-instance hosting. A production design needs durable transactions, shared replay/rate state, quotas, HTTPS, supply-chain controls and security review. Local app/TideCloak traffic is loopback HTTP; Tide network traffic uses HTTPS.
 
-| # | Conflict | Resolution |
-|---|---|---|
-| C-1 | The Tide-native shared-decryption contract `RelationshipAttestation:1` grants records **by realm admin**. The Tide MCP scenario says: "If the grant must be made by an owner … this contract does not fit." Our design rule is that admin approval never substitutes for owner consent. | Not used as the access gate. Owner-held key + owner-made wrap (§4), with both private keys protected by Tide self-encryption. |
-| C-2 | Tide's owner-mode `shared-with` attestation would bind consent and public keys, but it needs a custom Forseti contract, which "is not self-service". | Not used. The gap is recorded in §7. |
-| C-3 | Revoking a role or token in TideCloak only takes effect on the next token (5-minute lifetime here), so it cannot end access for an *existing session*. | Withdrawal does not depend on token revocation: the server stops serving at once, and re-keying takes effect for the next request of any session. |
+## Separate public simulation
+
+`/demo` never mounts the live Tide provider and never sends protected API requests. It runs only the six public synthetic fixtures. Real envelope-crypto helpers run in the browser, but Tide identity seals are replaced with in-memory AES test doubles. All simulated identities share one JS context, so there is no real authentication, user separation or administrator quorum. Reset/reload discards this state. It is a demonstration, not a fallback authentication mode.
+
+## Unverified or excluded
+
+Live enrolled Tide contribution/sharing/decryption/withdrawal; multi-admin governance; root/operator compromise; malicious application JavaScript; compromised user devices; researcher re-sharing; production operation; user demand and real-language dataset effectiveness. None is established by the automated tests or video.

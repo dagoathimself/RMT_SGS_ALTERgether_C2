@@ -54,6 +54,7 @@ export interface Grant {
   state: GrantState;
   wrap: KeyWrapRecord | null;
   wrapKeyVersion: number | null;
+  withdrawalFromKeyVersion?: number;
   history: { state: GrantState; at: string; note?: string }[];
   createdAt: string;
   updatedAt: string;

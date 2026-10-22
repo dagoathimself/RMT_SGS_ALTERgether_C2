@@ -6,7 +6,9 @@ import { About } from "@/components/About";
 import { TideStatus } from "@/components/TideStatus";
 
 export default function Home() {
-  const { authenticated, login, isInitializing, initError, hasRealmRole } = useTideCloak();
+  const { authenticated, login, isInitializing, initError, hasRealmRole, hasClientRole } = useTideCloak();
+  const participant = hasRealmRole("participant") || hasClientRole("participant");
+  const researcher = hasRealmRole("researcher") || hasClientRole("researcher");
   return (
     <>
       <TopBar />
@@ -20,12 +22,13 @@ export default function Home() {
               {isInitializing && <span className="sub">Checking your session…</span>}
               {initError && <p className="notice bad">Sign-in could not be reached, so nothing protected is shown.</p>}
               {!isInitializing && !authenticated && <button className="signin" onClick={() => login()}><SignInLabel /></button>}
-              {authenticated && hasRealmRole("participant") && <a className="btn" href="/participant">My contributions</a>}
-              {authenticated && hasRealmRole("researcher") && <a className="btn" href="/researcher">Shared with me</a>}
-              {authenticated && !hasRealmRole("participant") && !hasRealmRole("researcher") && (
+              {authenticated && participant && <a className="btn" href="/participant">My contributions</a>}
+              {authenticated && researcher && <a className="btn" href="/researcher">Shared with me</a>}
+              {authenticated && !participant && !researcher && (
                 <span className="sub">This account has no portal role. Admin roles never grant access to contributions.</span>
               )}
               <a className="btn secondary" href="#how">How it works</a>
+              <a className="btn secondary" href="/demo">Explore the simulation</a>
             </div>
             <TideStatus />
             <p className="hand">Your words stay yours. Even the admins have to ask.</p>

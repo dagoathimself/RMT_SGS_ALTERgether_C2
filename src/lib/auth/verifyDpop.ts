@@ -83,7 +83,7 @@ export class MemoryJtiStore implements JtiStore {
  */
 export function requestHtu(
   req: { url: string; headers: { get(name: string): string | null } },
-  trustForwardedHeaders = true,
+  trustForwardedHeaders = false,
 ): string {
   const url = new URL(req.url);
   if (trustForwardedHeaders) {
@@ -154,15 +154,20 @@ export async function verifyDpop(
     throw new DpopError("DPoP proof is not a compact JWS.");
   }
   if (header.typ !== "dpop+jwt") throw new DpopError(`DPoP proof typ is '${header.typ}', expected 'dpop+jwt'.`);
+  // This app configures the SDK for ES256. Reject symmetric algorithms and private JWKs
+  // before importing an attacker-supplied key (RFC 9449, section 4.3).
+  if (header.alg !== "ES256") throw new DpopError("Unsupported DPoP signature algorithm.");
   const jwk = header.jwk as JWK | undefined;
-  if (!jwk) throw new DpopError("DPoP proof header has no embedded jwk.");
+  if (!jwk || jwk.kty !== "EC" || jwk.crv !== "P-256" || "d" in jwk || "k" in jwk) {
+    throw new DpopError("DPoP proof must carry a public P-256 JWK only.");
+  }
 
   // Verify with the key the proof carries - NOT the realm key. This is the step the older,
   // withdrawn guidance got wrong, and the reason it concluded the format was non-standard.
   let payload: Record<string, unknown>;
   try {
     const key = await importJWK(jwk, header.alg);
-    ({ payload } = (await jwtVerify(proof, key)) as { payload: Record<string, unknown> });
+    ({ payload } = (await jwtVerify(proof, key, { algorithms: ["ES256"] })) as { payload: Record<string, unknown> });
   } catch (e) {
     throw new DpopError(`DPoP proof signature invalid: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -180,11 +185,11 @@ export async function verifyDpop(
     throw new DpopError("DPoP proof `ath` does not match the presented access token.");
   }
 
-  if (typeof payload.htm !== "string" || payload.htm.toUpperCase() !== req.method.toUpperCase()) {
+  if (payload.htm !== req.method) {
     throw new DpopError(`DPoP proof htm '${String(payload.htm)}' does not match ${req.method}.`);
   }
 
-  const htu = requestHtu(req, opts.trustForwardedHeaders ?? true);
+  const htu = requestHtu(req, opts.trustForwardedHeaders ?? false);
   if (payload.htu !== htu) {
     throw new DpopError(
       `DPoP proof htu '${String(payload.htu)}' does not match '${htu}'. Behind a proxy this is ` +
@@ -194,14 +199,16 @@ export async function verifyDpop(
 
   const skew = opts.iatSkewSeconds ?? IAT_SKEW_SECONDS;
   const iat = typeof payload.iat === "number" ? payload.iat : NaN;
-  if (!Number.isFinite(iat) || Math.abs(Date.now() / 1000 - iat) > skew) {
+  if (!Number.isFinite(skew) || skew < 0 || !Number.isSafeInteger(iat) || Math.abs(Date.now() / 1000 - iat) > skew) {
     throw new DpopError(`DPoP proof iat is outside the ±${skew}s window.`);
   }
 
   const jti = payload.jti;
-  if (typeof jti !== "string" || !jti) throw new DpopError("DPoP proof has no jti.");
+  if (typeof jti !== "string" || !jti || jti.length > 200) throw new DpopError("DPoP proof has an invalid jti.");
   const store = opts.jtiStore ?? defaultStore;
-  if (!(await store.claim(jti, Date.now() + skew * 1000))) {
+  // Future-dated proofs remain acceptable until iat + skew, which can be almost
+  // TWO windows after first use. Retain through that entire inclusive boundary.
+  if (!(await store.claim(`${thumb}:${jti}`, (iat + skew) * 1000 + 1))) {
     throw new DpopError("DPoP proof jti already used - replay.");
   }
 }

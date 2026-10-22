@@ -1,3 +1,14 @@
+# Repair source checks (2026-10-22)
+
+- Official https://tide.org/unlocked/ fetched as HTML: Plan C explicitly permits simulated Tide protection and equal judging; submission asks for a two-minute MP4 under 100 MB in the repository. This does not certify this entry's score.
+- https://docs.tide.org/Admin/e2ee: browser `doEncrypt`/`doDecrypt`, Tide enrolment, QEA and self-encrypt/self-decrypt roles. Checked against installed `@tidecloak/js/dist/types/IAMService.d.ts`; no new undocumented SDK methods used.
+- https://www.rfc-editor.org/rfc/rfc9449.html sections 4.3 and 11.1: public asymmetric proof key, token/URI/method binding and replay identifiers retained throughout the acceptance window.
+- Repaired-code tests use Node 24.19.0 and the committed package-lock, Next.js 16.4.2. No live Tide enrolment or network encryption result is claimed by the repair.
+
+The record below came from the original team upload. Its macOS/Docker observations and Tide-specific operational findings were not independently repeated during this repair.
+
+---
+
 # Sources, access dates and installed versions
 
 All accessed **2026-10-22** (ICT, UTC+7) unless noted. Pages were read in full as fetched HTML/text,

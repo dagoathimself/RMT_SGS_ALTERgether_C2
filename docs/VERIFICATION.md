@@ -1,73 +1,31 @@
-# Verification record
+# Current verification — repaired prototype
 
-Status values: **PASS** (observed), **FAIL** (observed), **NOT TESTED**, **DE-SCOPED**.
-Only results that were actually run and observed are marked PASS. Last updated 2026-10-22 (ICT).
+Observed 2026-10-22. Environment: Linux, Node 24.19.0, npm 11.9.0, Next.js 16.4.2, committed lockfile. Synthetic data only. Historical macOS/Docker claims from the original upload are preserved separately in LEGACY_VERIFICATION.md and are not current evidence.
 
-## Environment
-macOS 15.7.3 (arm64), Docker 28.1.1, Node 24.3.0, `tideorg/tidecloak-dev:latest` (image created
-2026-10-19), `@tidecloak/nextjs` 0.14.40. TideCloak and the app on loopback over HTTP (development only).
-
-## What could and could not be tested
-
-The three demo identities (`participant`, `researcher_a`, `researcher_b`) were created in the realm, but
-**no Tide account could be enrolled** for them during this session (E15). Every check that needs a signed-in Tide
-session (real encryption, sharing, decryption, withdrawal) is therefore **NOT TESTED**. The browser checks
-for these exist in the app (`/researcher` → Security tests, `/checks`) and can be run once accounts exist.
-Governance-admin enrolment was de-scoped by the team, so no multi-admin quorum result is claimed.
-
-## Results
-
-| ID | Check | Result | Evidence |
-|---|---|---|---|
-| E1 | App redirects to the real Tide sign-in (TideCloak → Tide ORK enclave, with DPoP thumbprint and signed client origin) | PASS | observed in browser: `Sign in with TideCloak` → `ork1.tideprotocol.com` sign-in form |
-| E2 | Realm created and licensed; QEA (IGA) enabled; Tide IdP settings signed | PASS | `scripts/init-tidecloak.sh` + `scripts/finish-setup.sh` output; `sign-idp-settings` HTTP 200 |
-| E3 | Governed writes become change requests even for the master admin (user create/delete → HTTP 202 PENDING) | PASS | bootstrap logs (bootstrap/firstAdmin mode, so the same operator could then approve them) |
-| E4 | Server rejects: no token, garbage token, forged EdDSA token with correct claims, forged token with a matching attacker DPoP proof, `alg:none` | PASS (5/5) | `evidence/api-negative-tests.md` |
-| E5 | State-changing requests from a foreign or missing Origin rejected (CSRF defence) | PASS (2/2) | `evidence/api-negative-tests.md` |
-| E6 | Request-size limit (70 KB → 413) and rate limit (400-request burst → 429s) enforced before auth | PASS (2/2) | `evidence/api-negative-tests.md` |
-| E7 | Protected responses `Cache-Control: no-store`; error bodies do not echo tokens | PASS (2/2) | `evidence/api-negative-tests.md` |
-| E8 | Expired **realm-signed** token rejected | NOT TESTED | the API test's expired token is attacker-signed, so it fails on signature first |
-| E9 | Copied realm token replayed as Bearer / replayed DPoP proof / proof for another URL rejected | NOT TESTED | in-app `/checks` → "Run session checks" (needs a signed-in account) |
-| E10 | Files that would be committed contain no admin password, user email, JWT, invite link or private key | PASS | dry-run `git add -n .` + content scan |
-| E11 | Production dependencies: known vulnerabilities | PASS (0 found) | `npm audit --omit=dev` |
-| E12 | Typecheck (strict unused checks) and production build | PASS | `tsc --noEmit --noUnusedLocals --noUnusedParameters`, `npm run build` |
-| E13 | Live dependency check calls the TideCloak realm (OIDC discovery, issuer must match the verifier's issuer) and the Tide home ORK | PASS | `GET /api/status` → TideCloak online 12 ms, Tide network online ~540-730 ms; shown on the landing page |
-| E14 | TideCloak stopped: status reports `unreachable`, protected API still refuses (401); restarted: back online | PASS | `docker stop tidecloak` → `/api/status` + `/api/contributions`; `docker start tidecloak` |
-| E15 | Tide account enrolment through the invite link | FAIL (environment; retry in a regular browser) | Tide enclave showed "Error creating user account. Network request failed". In the built-in browser the enclave's requests from `ork1.tideprotocol.com` to `localhost:8080` were `ERR_BLOCKED_BY_CLIENT` (browser local-network blocking). Server-side, TideCloak and the home ORK answered 200 at the same time. Not resolved before submission |
-
-### Scenario checks (same scenarios as the baseline)
-
-| Test | Result | Note |
+| Check | Observed result | Scope |
 |---|---|---|
-| S1 owner-approved grant lets A decrypt | NOT TESTED | needs enrolled Tide accounts |
-| S2 B denied; changed id; ciphertext handed to B | NOT TESTED | in-app "Security tests" ready (`ENABLE_ATTACK_SIMULATION=1` on the dev server) |
-| S3 withdrawal blocks existing and new sessions | NOT TESTED | |
-| S4 one admin cannot create effective access | DE-SCOPED / NOT TESTED | no governance admins enrolled; realm is in bootstrap mode |
-| S5 distinct approvals, duplicate does not count | DE-SCOPED | |
-| S6 master/bootstrap paths | NOT TESTED | known: in bootstrap mode the operator alone can change roles (see SECURITY_MODEL §5) |
-| S7 dependency failure / invalid session returns no content | PASS (server side) | invalid sessions (E4); TideCloak outage reported and protected API refused (E14). Browser-side Tide outage during decrypt: NOT TESTED |
-| S8 no plaintext/credentials in storage, logs, entry files | PARTIAL | entry files: PASS (E10); operational store with real contributions: NOT TESTED |
-| S9 governed change cannot substitute owner consent | NOT TESTED | |
-| S10 server-substituted researcher key is refused before sharing | NOT TESTED | edit the researcher's `publicJwk` in `data/store/db.json`, then share: expected "fingerprint does not match", no grant; the researcher's **Show my fingerprint** shows "DIFFERENT" |
+| Strict TypeScript | PASS | `npm run typecheck` |
+| Production build without a generated Tide adapter | PASS | `npm run build`; includes participant, researcher, checks, demo and all implemented API routes |
+| Automated crypto/verifier/route tests | PASS: 29/29 | `npm test`; actual production modules; ephemeral locally signed test realm, not live Tide |
+| Production HTTP checks | PASS: five pages return 200; 14/14 negative checks | `npm run test:http`; missing adapter, so this run establishes fail-closed HTTP behaviour |
+| Browser workflow | PASS | Real Chromium on production `/demo`; synthetic identity seals and portal decisions; `evidence/browser-checks.md` |
+| Vietnamese original text and HTML fixture | PASS | Diacritics preserved; decrypted markup appears as inert text; no dialogs or page errors |
+| Mobile view | PASS | 390px viewport, no horizontal overflow |
+| Simulation isolation | PASS | No protected API requests from `/demo`; absent live configuration gives setup guidance |
+| Two-minute MP4 | PASS | Actual browser-state walkthrough with captions; H.264 1280×800, about 1 MB; identity and governance explicitly simulated |
+| Constructed baseline | Reproduced: five failures out of ten checks | Applies to this deliberately operator-controlled baseline only |
+| Production dependency audit | Zero known vulnerabilities reported | `npm audit --omit=dev`; not proof of complete dependency security |
+| Live Tide enrolment, identity-bound seal/open and full workflow | NOT TESTED | Requires enrolled accounts and reachable local realm/network |
+| Multiple independent administrator approvals | NOT IMPLEMENTED / NOT TESTED | Scripts retain single-operator bootstrap; no operational quorum claim |
 
-### Baseline comparison
-`npm run baseline` → `evidence/baseline-results.md`: the administrator-controlled baseline fails 5 of 10
-checks (S2c, S4, S5, S6, S9). This describes the baseline only; it is not a score for the protected app.
+## What the automated tests establish
 
+Eight crypto/simulation tests check Unicode, wrong-recipient rejection, every grant-binding field, authenticated body context, payload digest validation, locally derived fingerprints, re-keying and the isolated simulation workflow.
 
-## Changes since the last run (2026-10-22, afternoon)
-`npm run test:api` re-run on the changed code: 14/14 as expected (`evidence/api-negative-tests.md`). The 400-request
-burst added no rows to the activity log (946 before and after), confirming anonymous failures are no longer logged.
-E13/E14 were not re-run.
-- Sharing and re-wrapping now require an out-of-band fingerprint confirmation (S10).
-- Pending grants can be cancelled (previously a half-finished share blocked that researcher).
-- Activity log: anonymous failures are no longer written; client-reported rows can only reference a
-  contribution the caller owns or was granted.
-- Rate limit no longer keys on the client-controlled `X-Real-IP` header.
-- Role checks count realm roles and this app's client roles only.
-- Preview (simulated) mode removed.
+Seven DPoP tests check valid single use; future-dated proof reuse after 301 seconds and at the last accepted timestamp; expired/future timestamps; missing/bare Bearer/unbound tokens; URL, method, token hash and key mismatches; private/symmetric JWK rejection; identifier bounds; and ignored untrusted forwarding headers. The replay regression fails under the old first-use-plus-300-seconds expiry and passes after retaining through iat-plus-skew.
 
-## Known gaps (see SECURITY_MODEL §7)
-- Researcher public keys come from the app server; the out-of-band fingerprint check is the defence.
-- Withdrawal is enforced by the app server; a malicious operator could restore an old wrap.
-- Realm left in bootstrap mode: no multi-admin threshold, so a lone operator can change roles.
+Fourteen route integration tests use temporary Ed25519 realm signing keys and real ES256 DPoP proofs. They exercise the production verifier and handlers, including correctly signed expired/wrong-claim test tokens, own-client roles, origin and streaming limits, immutable researcher keys, ciphertext-only records, cross-owner denials, fingerprint confirmation, pending/active grants, A reading/B refused, cancellation, pending withdrawal, atomic multi-recipient re-keying, separate persisted-state denial verification and scoped logs. No production authentication switch is added. The generated test keys and database are removed after the run.
+
+## What remains unresolved
+
+These checks do not establish real Tide availability, successful account enrolment, native quorum governance, malicious-operator-resistant withdrawal, trusted code delivery, production readiness, user demand or research effectiveness. An authorised reader can retain copies. A malicious operator can restore old encrypted records or serve malicious JavaScript. The local in-memory replay cache is lost on restart and is not shared across instances. See SECURITY_MODEL.md.

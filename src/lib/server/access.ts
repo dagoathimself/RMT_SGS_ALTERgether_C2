@@ -26,11 +26,16 @@ export function isWrap(v: unknown): v is KeyWrapRecord {
   if (!v || typeof v !== "object") return false;
   const w = v as Record<string, unknown>;
   const epk = w.epk as Record<string, unknown> | undefined;
-  const b = (x: unknown, max: number) => typeof x === "string" && x.length > 0 && x.length <= max && /^[A-Za-z0-9+/=_-]+$/.test(x);
+  const b = (x: unknown, size: number) => typeof x === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(x) &&
+    Buffer.from(x, "base64").length === size && Buffer.from(x, "base64").toString("base64") === x;
   return (
+    Object.keys(w).every((k) => ["alg", "epk", "salt", "iv", "ct"].includes(k)) &&
     w.alg === "ECDH-ES+HKDF-SHA256+A256GCM" &&
-    !!epk && epk.kty === "EC" && epk.crv === "P-256" && b(epk.x, 64) && b(epk.y, 64) &&
-    b(w.salt, 64) && b(w.iv, 64) && b(w.ct, 128)
+    !!epk && Object.keys(epk).every((k) => ["kty", "crv", "x", "y"].includes(k)) &&
+    epk.kty === "EC" && epk.crv === "P-256" &&
+    typeof epk.x === "string" && /^[A-Za-z0-9_-]{43}$/.test(epk.x) &&
+    typeof epk.y === "string" && /^[A-Za-z0-9_-]{43}$/.test(epk.y) &&
+    b(w.salt, 16) && b(w.iv, 12) && b(w.ct, 48)
   );
 }
 
@@ -43,6 +48,7 @@ export function grantView(g: Grant) {
     recipientName: g.recipientName,
     recipientFingerprint: g.recipientFingerprint,
     purposeId: g.purposeId,
+    purposeHash: g.purposeHash,
     permissionVersion: g.permissionVersion,
     state: g.state,
     wrapKeyVersion: g.wrapKeyVersion,
